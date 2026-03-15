@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"uptime_monitor/presentation"
 
@@ -25,6 +29,7 @@ func main() {
 	// Register routes
 	http.HandleFunc("/health", presentation.HealthHandler)
 	http.HandleFunc("/info", presentation.InfoHandler)
+	http.HandleFunc("/check", presentation.CheckHandler)
 
 	// Start server
 	addr := fmt.Sprintf(":%s", port)
@@ -32,8 +37,30 @@ func main() {
 	log.Printf("Available endpoints:")
 	log.Printf("  GET http://localhost:%s/health", port)
 	log.Printf("  GET http://localhost:%s/info", port)
+	log.Printf("  GET http://localhost:%s/check?url=<website_url>", port)
 
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	server := &http.Server{Addr: addr}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	<-sigChan
+	log.Println("Shutting down server...")
+
+	// Graceful shutdown with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
 	}
+
+	log.Println("Server stopped gracefully")
 }
