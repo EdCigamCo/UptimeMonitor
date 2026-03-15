@@ -8,9 +8,15 @@ import (
 	"uptime_monitor/infrastructure/worker"
 )
 
+type Handlers struct{}
+
+func NewHandlers() *Handlers {
+	return &Handlers{}
+}
+
 // HealthHandler handles GET /health request
 // Returns simple text "OK" for server health check
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -23,7 +29,7 @@ func HealthHandler(w http.ResponseWriter, r *http.Request) {
 
 // InfoHandler handles GET /info request
 // Returns simple text with server information
-func InfoHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) InfoHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -39,7 +45,7 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
 // CheckHandler handles GET /check request
 // Checks availability of a website specified in query parameter "url"
 // Returns simple text with status and response time
-func CheckHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) CheckHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return

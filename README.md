@@ -1,105 +1,96 @@
 # UptimeMonitor
 
-## Структура проекта
+## Описание
 
+Эта версия проекта добавляет поддержку базы данных SQLite для хранения информации о мониторируемых сайтах и результатах проверок.
+
+## Что добавлено
+
+### Новые компоненты
+
+1. **Модели данных** (`model/model.go`):
+    - `Site` - структура для представления мониторируемого сайта
+    - `Check` - структура для представления результата проверки доступности
+
+2. **Конфигурация** (`infrastructure/config/`):
+    - `env.go` - функции для получения переменных окружения (DB_PATH, PORT)
+    - `database.go` - инициализация подключения к SQLite и применение миграций
+
+3. **Repository слой** (`infrastructure/repository/db.go`):
+    - `CreateSite()` - создание нового сайта в БД
+    - `GetAllSites()` - получение всех сайтов
+    - `GetSiteByID()` - получение сайта по ID
+    - `DeleteSite()` - удаление сайта
+
+4. **Миграции** (`migrations/schema.sql`):
+    - Таблица `sites` - хранит информацию о мониторируемых сайтах
+    - Таблица `checks` - хранит результаты проверок доступности
+
+### Изменения в существующих компонентах
+
+- **cmd/main.go**:
+    - Инициализация БД при запуске
+    - Graceful shutdown с закрытием соединения с БД
+    - Простой тест работы с БД (создание, чтение)
+
+## Структура базы данных
+
+### Таблица `sites`
+- `id` (INTEGER PRIMARY KEY) - уникальный идентификатор
+- `url` (TEXT NOT NULL) - URL сайта для мониторинга
+- `created_at` (DATETIME) - дата и время создания записи
+
+### Таблица `checks`
+- `id` (INTEGER PRIMARY KEY) - уникальный идентификатор
+- `site_id` (INTEGER NOT NULL) - ссылка на сайт (FOREIGN KEY)
+- `status` (TEXT NOT NULL) - статус доступности ("up" или "down")
+- `response_time` (INTEGER NOT NULL) - время ответа в миллисекундах
+- `checked_at` (DATETIME) - дата и время проверки
+
+## Переменные окружения
+
+Создайте файл `.env` в корне проекта (опционально):
+
+```env
+PORT=8080
+DB_PATH=uptime_monitor.db
 ```
-uptime_monitor/
-├── cmd/
-│   └── main.go                    # Точка входа приложения
-├── presentation/
-│   └── controller.go             # HTTP контроллеры
-├── infrastructure/
-│   └── worker/
-│       └── worker.go             # Функция проверки доступности сайтов
-├── application/                   # (пустая, будет использоваться позже)
-├── model/                         # (пустая, будет использоваться позже)
-├── migrations/                    # (пустая, будет использоваться позже)
-├── go.mod
-└── README.md
-```
 
-## Функционал
+Если файл `.env` не создан, используются значения по умолчанию:
+- `PORT=8080`
+- `DB_PATH=uptime_monitor.db`
 
-- Базовый HTTP сервер на порту 8080 (или из переменной окружения PORT)
-- Эндпоинт `GET /health` - проверка работоспособности сервера (возвращает "OK")
-- Эндпоинт `GET /info` - информация о сервере (возвращает текст с временем запуска)
-- **Новое:** Эндпоинт `GET /check?url=<website_url>` - проверка доступности сайта (возвращает статус и время ответа)
-- **Новое:** Функция `CheckSiteAvailability()` в `infrastructure/worker/worker.go` для проверки доступности сайтов
+## Зависимости
 
-## Новая функциональность
+- `github.com/mattn/go-sqlite3` - драйвер SQLite для Go
+- `github.com/joho/godotenv` - загрузка переменных окружения (уже было)
 
-### CheckSiteAvailability
+## Как запустить
 
-Функция для проверки доступности веб-сайта:
-
-```go
-status, responseTime, err := worker.CheckSiteAvailability("https://example.com")
-```
-
-**Параметры:**
-- `url string` - URL сайта для проверки
-
-**Возвращает:**
-- `status string` - "up" (код 200-299) или "down" (остальные коды или ошибки)
-- `responseTime int64` - время ответа в миллисекундах
-- `err error` - ошибка, если запрос не удался
-
-**Особенности:**
-- Таймаут запроса: 5 секунд
-- Автоматическое закрытие тела ответа
-- Обработка сетевых ошибок и таймаутов
-
-## Запуск
-
+1. Установите зависимости:
 ```bash
-go run cmd/main.go
+go mod tidy
 ```
 
-## Тестирование
-
+2. Запустите сервер:
 ```bash
-# Проверка health endpoint
-curl http://localhost:8080/health
-
-# Проверка info endpoint
-curl http://localhost:8080/info
-
-# Проверка доступности сайта
-curl "http://localhost:8080/check?url=https://google.com"
-curl "http://localhost:8080/check?url=https://example.com"
+go run ./cmd/main.go
 ```
 
-**Пример ответа от /check:**
-```
-URL: https://google.com
-Status: up
-Response time: 245 ms
-```
+При первом запуске:
+- Создастся файл базы данных `uptime_monitor.db` (или путь из `DB_PATH`)
+- Применятся миграции из `migrations/schema.sql`
+- Выполнится простой тест работы с БД (создание и чтение сайта)
+- Запустится HTTP сервер
 
-## Пример использования CheckSiteAvailability
+## Доступные эндпоинты
 
-```go
-package main
+Все эндпоинты из предыдущей версии (slide_9) остаются доступными:
 
-import (
-    "fmt"
-    "log"
-    "uptime_monitor/infrastructure/worker"
-)
+- `GET /health` - проверка работоспособности сервера
+- `GET /info` - информация о сервере
+- `GET /check?url=<website_url>` - проверка доступности сайта
 
-func main() {
-    status, responseTime, err := worker.CheckSiteAvailability("https://google.com")
-    if err != nil {
-        log.Printf("Error: %v", err)
-        return
-    }
-    
-    fmt.Printf("Status: %s, Response time: %d ms\n", status, responseTime)
-}
-```
+## Следующие шаги
 
-## Примечания
-
-- На этом этапе используются только простые текстовые ответы
-- Функция проверки доступности готова к использованию в фоновом воркере
-- Используется стандартная библиотека Go для HTTP клиента
+В следующей версии будет добавлено REST API для управления сайтами через HTTP запросы с использованием JSON.

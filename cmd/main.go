@@ -9,27 +9,32 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"uptime_monitor/infrastructure/config"
 
 	"uptime_monitor/presentation"
-
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Get port from environment variable or use default value
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	db, err := config.InitDatabase(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
 	}
+	defer config.CloseDatabase(db)
+
+	log.Println("Database initialized successfully")
+
+	handlers := presentation.NewHandlers()
+	port := cfg.Port
 
 	// Register routes
-	http.HandleFunc("/health", presentation.HealthHandler)
-	http.HandleFunc("/info", presentation.InfoHandler)
-	http.HandleFunc("/check", presentation.CheckHandler)
+	http.HandleFunc("/health", handlers.HealthHandler)
+	http.HandleFunc("/info", handlers.InfoHandler)
+	http.HandleFunc("/check", handlers.CheckHandler)
 
 	// Start server
 	addr := fmt.Sprintf(":%s", port)
@@ -63,4 +68,5 @@ func main() {
 	}
 
 	log.Println("Server stopped gracefully")
+	log.Println("Database connection closed")
 }
