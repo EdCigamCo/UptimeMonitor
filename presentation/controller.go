@@ -30,6 +30,6 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
-	info := fmt.Sprintf("UptimeMonitor Server\nStarted at: %s", time.Now().Format("2006-01-02 15:04:05"))
+	info := fmt.Sprintf("UptimeMonitor Server\nLast request at: %s", time.Now().Format("2006-01-02 15:04:05"))
 	fmt.Fprint(w, info)
 }
