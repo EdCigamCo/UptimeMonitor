@@ -2,68 +2,149 @@
 
 ## Описание
 
-Эта версия проекта добавляет поддержку базы данных SQLite для хранения информации о мониторируемых сайтах и результатах проверок.
+Эта версия проекта добавляет REST API для управления мониторируемыми сайтами с использованием JSON для запросов и ответов.
 
 ## Что добавлено
 
 ### Новые компоненты
 
-1. **Модели данных** (`model/model.go`):
-    - `Site` - структура для представления мониторируемого сайта
-    - `Check` - структура для представления результата проверки доступности
+1. **DTO (Data Transfer Objects)** (`application/dto/dto.go`):
+    - `CreateSiteRequest` - структура для запроса на создание сайта
+    - `SiteResponse` - структура для ответа с информацией о сайте
+    - `SiteListResponse` - структура для ответа со списком сайтов
+    - `ErrorResponse` - структура для ответа с ошибкой
 
-2. **Конфигурация** (`infrastructure/config/`):
-    - `env.go` - функции для получения переменных окружения (DB_PATH, PORT)
-    - `database.go` - инициализация подключения к SQLite и применение миграций
-
-3. **Repository слой** (`infrastructure/repository/db.go`):
-    - `CreateSite()` - создание нового сайта в БД
+2. **Application Layer** (`application/uptime_monitor.go`):
+    - `UptimeMonitor` - структура бизнес-логики
+    - `CreateSite()` - создание сайта с валидацией URL
     - `GetAllSites()` - получение всех сайтов
-    - `GetSiteByID()` - получение сайта по ID
-    - `DeleteSite()` - удаление сайта
+    - `DeleteSite()` - удаление сайта по ID
+    - `validateURL()` - валидация URL перед сохранением
 
-4. **Миграции** (`migrations/schema.sql`):
-    - Таблица `sites` - хранит информацию о мониторируемых сайтах
-    - Таблица `checks` - хранит результаты проверок доступности
+3. **Mapper** (`presentation/mapper/mapper.go`):
+    - `ToSiteResponse()` - преобразование модели в DTO для ответа
+    - `ToSiteListResponse()` - преобразование списка моделей в DTO
 
 ### Изменения в существующих компонентах
 
+- **presentation/controller.go**:
+    - Добавлена функция `InitHandlers()` для инициализации с application layer
+    - Добавлен `SitesHandler()` - обработчик для POST и GET `/api/sites`
+    - Добавлен `SiteHandler()` - обработчик для DELETE `/api/sites/:id`
+    - Добавлены вспомогательные функции `respondWithJSON()` и `respondWithError()`
+    - Все новые эндпоинты возвращают JSON
+
 - **cmd/main.go**:
-    - Инициализация БД при запуске
-    - Graceful shutdown с закрытием соединения с БД
-    - Простой тест работы с БД (создание, чтение)
+    - Инициализация application layer с передачей БД
+    - Инициализация presentation layer с передачей application
+    - Регистрация новых API маршрутов
 
-## Структура базы данных
+## Архитектура
 
-### Таблица `sites`
-- `id` (INTEGER PRIMARY KEY) - уникальный идентификатор
-- `url` (TEXT NOT NULL) - URL сайта для мониторинга
-- `created_at` (DATETIME) - дата и время создания записи
+Проект теперь следует принципам Clean Architecture с четким разделением слоев:
 
-### Таблица `checks`
-- `id` (INTEGER PRIMARY KEY) - уникальный идентификатор
-- `site_id` (INTEGER NOT NULL) - ссылка на сайт (FOREIGN KEY)
-- `status` (TEXT NOT NULL) - статус доступности ("up" или "down")
-- `response_time` (INTEGER NOT NULL) - время ответа в миллисекундах
-- `checked_at` (DATETIME) - дата и время проверки
-
-## Переменные окружения
-
-Создайте файл `.env` в корне проекта (опционально):
-
-```env
-PORT=8080
-DB_PATH=uptime_monitor.db
+```
+presentation (HTTP handlers)
+    ↓
+application (business logic)
+    ↓
+repository (data access)
+    ↓
+database
 ```
 
-Если файл `.env` не создан, используются значения по умолчанию:
-- `PORT=8080`
-- `DB_PATH=uptime_monitor.db`
+## API Эндпоинты
 
-## Зависимости
+### POST /api/sites
+Создает новый сайт для мониторинга.
 
-- `github.com/mattn/go-sqlite3` - драйвер SQLite для Go
-- `github.com/joho/godotenv` - загрузка переменных окружения (уже было)
+**Request Body:**
+```json
+{
+  "url": "https://example.com"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": 1,
+  "url": "https://example.com",
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+**Response (400 Bad Request):**
+```json
+{
+  "error": "Invalid URL: URL must include scheme (http:// or https://)"
+}
+```
+
+### GET /api/sites
+Получает список всех мониторируемых сайтов.
+
+**Response (200 OK):**
+```json
+{
+  "sites": [
+    {
+      "id": 1,
+      "url": "https://example.com",
+      "created_at": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": 2,
+      "url": "https://google.com",
+      "created_at": "2024-01-15T11:00:00Z"
+    }
+  ]
+}
+```
+
+### DELETE /api/sites/:id
+Удаляет сайт по ID.
+
+**Response (204 No Content):** - успешное удаление
+
+**Response (404 Not Found):**
+```json
+{
+  "error": "Site with id 123 not found"
+}
+```
+
+## Валидация
+
+При создании сайта выполняется валидация URL:
+- URL не может быть пустым
+- URL должен иметь правильный формат
+- URL должен содержать схему (http:// или https://)
+- URL должен содержать хост
+
+## Обработка ошибок
+
+API возвращает соответствующие HTTP коды статуса:
+- `200 OK` - успешный запрос
+- `201 Created` - успешное создание ресурса
+- `204 No Content` - успешное удаление
+- `400 Bad Request` - неверный запрос (валидация, парсинг)
+- `404 Not Found` - ресурс не найден
+- `500 Internal Server Error` - внутренняя ошибка сервера
+
+Все ошибки возвращаются в формате JSON:
+```json
+{
+  "error": "Описание ошибки"
+}
+```
+
+## Старые эндпоинты
+
+Все эндпоинты из предыдущих версий остаются доступными:
+- `GET /health` - проверка работоспособности сервера (текст)
+- `GET /info` - информация о сервере (текст)
+- `GET /check?url=<website_url>` - проверка доступности сайта (текст)
 
 ## Как запустить
 
@@ -77,20 +158,25 @@ go mod tidy
 go run ./cmd/main.go
 ```
 
-При первом запуске:
-- Создастся файл базы данных `uptime_monitor.db` (или путь из `DB_PATH`)
-- Применятся миграции из `migrations/schema.sql`
-- Выполнится простой тест работы с БД (создание и чтение сайта)
-- Запустится HTTP сервер
+3. Протестируйте API:
 
-## Доступные эндпоинты
+**Создать сайт:**
+```bash
+curl -X POST http://localhost:8080/api/sites \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+```
 
-Все эндпоинты из предыдущей версии (slide_9) остаются доступными:
+**Получить все сайты:**
+```bash
+curl http://localhost:8080/api/sites
+```
 
-- `GET /health` - проверка работоспособности сервера
-- `GET /info` - информация о сервере
-- `GET /check?url=<website_url>` - проверка доступности сайта
+**Удалить сайт:**
+```bash
+curl -X DELETE http://localhost:8080/api/sites/1
+```
 
 ## Следующие шаги
 
-В следующей версии будет добавлено REST API для управления сайтами через HTTP запросы с использованием JSON.
+В следующей версии будет добавлен фоновый воркер, который будет периодически проверять доступность всех сохраненных сайтов и сохранять результаты в базу данных.

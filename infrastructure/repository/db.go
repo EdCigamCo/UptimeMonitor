@@ -2,10 +2,14 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 	"uptime_monitor/model"
 )
+
+// ErrSiteNotFound is returned when a site is not found
+var ErrSiteNotFound = errors.New("site not found")
 
 // parseTimeFromDB parses time string from database to time.Time
 // Tries RFC3339 format first, then falls back to "2006-01-02 15:04:05" format
@@ -92,7 +96,7 @@ func GetSiteByID(db *sql.DB, id int64) (*model.Site, error) {
 	err := db.QueryRow(query, id).Scan(&site.ID, &site.URL, &createdAtStr)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("site with id %d not found", id)
+			return nil, fmt.Errorf("%w: site with id %d", ErrSiteNotFound, id)
 		}
 		return nil, fmt.Errorf("failed to get site: %w", err)
 	}
@@ -122,7 +126,7 @@ func DeleteSite(db *sql.DB, id int64) error {
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("site with id %d not found", id)
+		return fmt.Errorf("%w: site with id %d", ErrSiteNotFound, id)
 	}
 
 	return nil
