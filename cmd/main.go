@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"uptime_monitor/application"
 	"uptime_monitor/infrastructure/config"
 
 	"uptime_monitor/presentation"
@@ -28,13 +29,20 @@ func main() {
 
 	log.Println("Database initialized successfully")
 
-	handlers := presentation.NewHandlers()
+	app := application.NewUptimeMonitor(db)
+	handlers := presentation.NewHandlers(app)
 	port := cfg.Port
 
 	// Register routes
 	http.HandleFunc("/health", handlers.HealthHandler)
 	http.HandleFunc("/info", handlers.InfoHandler)
 	http.HandleFunc("/check", handlers.CheckHandler)
+	// GET /api/sites - list all sites
+	http.HandleFunc("/api/sites", handlers.ListSitesHandler)
+	// POST /api/site - create site
+	http.HandleFunc("/api/site", handlers.CreateSiteHandler)
+	// DELETE /api/site/:id - delete site by ID
+	http.HandleFunc("/api/site/", handlers.DeleteSiteHandler)
 
 	// Start server
 	addr := fmt.Sprintf(":%s", port)
@@ -43,6 +51,9 @@ func main() {
 	log.Printf("  GET http://localhost:%s/health", port)
 	log.Printf("  GET http://localhost:%s/info", port)
 	log.Printf("  GET http://localhost:%s/check?url=<website_url>", port)
+	log.Printf("  GET http://localhost:%s/api/sites", port)
+	log.Printf("  POST http://localhost:%s/api/site", port)
+	log.Printf("  DELETE http://localhost:%s/api/site/<id>", port)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
