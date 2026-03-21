@@ -11,6 +11,9 @@ import (
 // ErrSiteNotFound is returned when a site is not found
 var ErrSiteNotFound = errors.New("site not found")
 
+// ErrNoChecksFound is returned when no checks are found for a site
+var ErrNoChecksFound = errors.New("no checks found")
+
 // parseTimeFromDB parses time string from database to time.Time
 // Tries RFC3339 format first, then falls back to "2006-01-02 15:04:05" format
 func parseTimeFromDB(timeStr string) (time.Time, error) {
@@ -130,4 +133,80 @@ func DeleteSite(db *sql.DB, id int64) error {
 	}
 
 	return nil
+}
+
+// SaveCheck saves a check result to the database
+func SaveCheck(db *sql.DB, siteID int64, status string, responseTime int64) error {
+	query := `INSERT INTO checks (site_id, status, response_time, checked_at) VALUES (?, ?, ?, ?)`
+
+	checkedAt := time.Now()
+	// Use RFC3339 format to match what SQLite returns
+	checkedAtStr := checkedAt.Format(time.RFC3339)
+	_, err := db.Exec(query, siteID, status, responseTime, checkedAtStr)
+	if err != nil {
+		return fmt.Errorf("failed to save check: %w", err)
+	}
+
+	return nil
+}
+
+// GetLatestCheck retrieves the most recent check for a site
+func GetLatestCheck(db *sql.DB, siteID int64) (*model.Check, error) {
+	query := `SELECT id, site_id, status, response_time, checked_at FROM checks WHERE site_id = ? ORDER BY checked_at DESC LIMIT 1`
+
+	var check model.Check
+	var checkedAtStr string
+
+	err := db.QueryRow(query, siteID).Scan(&check.ID, &check.SiteID, &check.Status, &check.ResponseTime, &checkedAtStr)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("%w: site id %d", ErrNoChecksFound, siteID)
+		}
+		return nil, fmt.Errorf("failed to get latest check: %w", err)
+	}
+
+	// Parse checked_at string to time.Time
+	parsedTime, err := parseTimeFromDB(checkedAtStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse checked_at: %w", err)
+	}
+	check.CheckedAt = parsedTime
+
+	return &check, nil
+}
+
+// GetCheckHistory retrieves check history for a site
+func GetCheckHistory(db *sql.DB, siteID int64, limit int) ([]model.Check, error) {
+	query := `SELECT id, site_id, status, response_time, checked_at FROM checks WHERE site_id = ? ORDER BY checked_at DESC LIMIT ?`
+
+	rows, err := db.Query(query, siteID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query check history: %w", err)
+	}
+	defer rows.Close()
+
+	var checks []model.Check
+	for rows.Next() {
+		var check model.Check
+		var checkedAtStr string
+
+		if err := rows.Scan(&check.ID, &check.SiteID, &check.Status, &check.ResponseTime, &checkedAtStr); err != nil {
+			return nil, fmt.Errorf("failed to scan check: %w", err)
+		}
+
+		// Parse checked_at string to time.Time
+		parsedTime, err := parseTimeFromDB(checkedAtStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse checked_at: %w", err)
+		}
+		check.CheckedAt = parsedTime
+
+		checks = append(checks, check)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating checks: %w", err)
+	}
+
+	return checks, nil
 }
