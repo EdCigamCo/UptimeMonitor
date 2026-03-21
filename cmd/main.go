@@ -11,7 +11,9 @@ import (
 	"time"
 	"uptime_monitor/application"
 	"uptime_monitor/infrastructure/config"
+	"uptime_monitor/infrastructure/worker"
 
+	"golang.org/x/sync/errgroup"
 	"uptime_monitor/presentation"
 )
 
@@ -31,6 +33,16 @@ func main() {
 
 	app := application.NewUptimeMonitor(db)
 	handlers := presentation.NewHandlers(app)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	g, gCtx := errgroup.WithContext(ctx)
+
+	// Pass gCtx to worker so it stops when any goroutine fails
+	checkInterval := 30 * time.Second
+	w := worker.NewWorker(db, gCtx, checkInterval)
+
 	port := cfg.Port
 
 	// Register routes
@@ -60,24 +72,48 @@ func main() {
 
 	server := &http.Server{Addr: addr}
 
-	go func() {
+	g.Go(func() error {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			return fmt.Errorf("failed to start server: %w", err)
 		}
-	}()
+		return nil
+	})
 
-	// Wait for interrupt signal
-	<-sigChan
-	log.Println("Shutting down server...")
+	g.Go(func() error {
+		return w.Run()
+	})
 
-	// Graceful shutdown with timeout
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
+	g.Go(func() error {
+		select {
+		case <-sigChan:
+			log.Println("Received shutdown signal")
 
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server forced to shutdown: %v", err)
+			// Shutdown HTTP server first (before canceling context)
+			log.Println("Initiating graceful shutdown...")
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+
+			log.Println("Shutting down HTTP server...")
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				log.Printf("Server forced to shutdown: %v", err)
+			} else {
+				log.Println("HTTP server stopped gracefully")
+			}
+
+			// Cancel context to stop worker
+			cancel()
+			return nil
+		case <-gCtx.Done():
+			return gCtx.Err()
+		}
+	})
+
+	if err := g.Wait(); err != nil && err != context.Canceled {
+		log.Printf("Error in goroutine: %v", err)
 	}
 
-	log.Println("Server stopped gracefully")
+	// Worker should already be stopped via context cancellation
+	log.Println("Worker stopped (context cancelled)")
 	log.Println("Database connection closed")
+	log.Println("Shutdown complete")
 }
