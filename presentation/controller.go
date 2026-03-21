@@ -116,14 +116,14 @@ func (h *Handlers) ListSitesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sites, err := h.app.GetAllSites()
+	sites, checks, err := h.app.GetAllSitesWithStatus()
 	if err != nil {
 		log.Printf("Error getting sites: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve sites")
 		return
 	}
 
-	response := mapper.ToSiteListResponse(sites)
+	response := mapper.ToSiteListResponseWithChecks(sites, checks)
 
 	respondWithJSON(w, http.StatusOK, response)
 }
@@ -158,6 +158,55 @@ func (h *Handlers) DeleteSiteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetSiteHistoryHandler handles GET /api/sites/:id/history
+func (h *Handlers) GetSiteHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/sites/")
+	parts := strings.Split(path, "/")
+
+	if len(parts) < 2 || parts[1] != "history" {
+		respondWithError(w, http.StatusBadRequest, "Invalid path. Expected format: /api/sites/:id/history")
+		return
+	}
+
+	if parts[0] == "" {
+		respondWithError(w, http.StatusBadRequest, "Site ID is required")
+		return
+	}
+
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid site ID")
+		return
+	}
+
+	limit := 50
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	site, checks, err := h.app.GetSiteHistory(id, limit)
+	if err != nil {
+		if errors.Is(err, application.ErrSiteNotFound) {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Site with id %d not found", id))
+			return
+		}
+		log.Printf("Error getting site history: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve site history")
+		return
+	}
+
+	response := mapper.ToSiteHistoryResponse(site, checks)
+
+	respondWithJSON(w, http.StatusOK, response)
 }
 
 // respondWithJSON sends JSON response

@@ -55,6 +55,8 @@ func main() {
 	http.HandleFunc("/api/site", handlers.CreateSiteHandler)
 	// DELETE /api/site/:id - delete site by ID
 	http.HandleFunc("/api/site/", handlers.DeleteSiteHandler)
+	// GET /api/sites/:id/history - get check history for a site
+	http.HandleFunc("/api/sites/", handlers.GetSiteHistoryHandler)
 
 	// Start server
 	addr := fmt.Sprintf(":%s", port)
@@ -66,6 +68,7 @@ func main() {
 	log.Printf("  GET http://localhost:%s/api/sites", port)
 	log.Printf("  POST http://localhost:%s/api/site", port)
 	log.Printf("  DELETE http://localhost:%s/api/site/<id>", port)
+	log.Printf("  GET http://localhost:%s/api/sites/<id>/history?limit=<n>", port)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)

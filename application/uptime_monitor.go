@@ -81,3 +81,41 @@ func validateURL(s string) error {
 
 	return nil
 }
+
+// GetAllSitesWithStatus retrieves all sites with their latest check status
+func (app *UptimeMonitor) GetAllSitesWithStatus() ([]model.Site, []*model.Check, error) {
+	sites, err := repository.GetAllSites(app.db)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get sites: %w", err)
+	}
+
+	checks := make([]*model.Check, len(sites))
+	for i, site := range sites {
+		check, err := repository.GetLatestCheck(app.db, site.ID)
+		if err != nil {
+			checks[i] = nil
+		} else {
+			checks[i] = check
+		}
+	}
+
+	return sites, checks, nil
+}
+
+// GetSiteHistory retrieves check history for a site
+func (app *UptimeMonitor) GetSiteHistory(siteID int64, limit int) (*model.Site, []model.Check, error) {
+	site, err := repository.GetSiteByID(app.db, siteID)
+	if err != nil {
+		if errors.Is(err, repository.ErrSiteNotFound) {
+			return nil, nil, fmt.Errorf("%w: site with id %d", ErrSiteNotFound, siteID)
+		}
+		return nil, nil, fmt.Errorf("failed to get site: %w", err)
+	}
+
+	checks, err := repository.GetCheckHistory(app.db, siteID, limit)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get check history: %w", err)
+	}
+
+	return site, checks, nil
+}
